@@ -49,6 +49,11 @@ export const ATTR = {
   VISIBILITY: "observability.visibility", // "observed" | "inferred"
 } as const;
 
+/** Shared thresholds — same values used by payment-api's stall watchdog and
+ * settlement's receipt wait, so classify() is judged against one definition. */
+export const BLOCK_THRESHOLD = 20;
+export const WEBHOOK_THRESHOLD_MS = 8_000;
+
 export type Visibility = "observed" | "inferred";
 export type Confidence = "high" | "medium" | "low";
 

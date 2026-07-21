@@ -32,8 +32,10 @@ const tracer = trace.getTracer("meridian-mock-processor");
 
 const SETTLEMENT_WEBHOOK =
   process.env.SETTLEMENT_WEBHOOK ?? "http://localhost:4002/webhook/confirmed";
-const STALL_MODE = process.env.STALL_MODE === "true";
 const WEBHOOK_DELAY_MS = Number(process.env.WEBHOOK_DELAY_MS ?? 3000);
+
+// Settable live via POST /control, no restart needed for demos.
+let stallMode = process.env.STALL_MODE === "true";
 
 const app = express();
 app.use(express.json());
@@ -55,7 +57,7 @@ app.post("/charge", (req, res) => {
       res.json({ ok: true, providerRef, status: "accepted" });
       span.end();
 
-      if (STALL_MODE) {
+      if (stallMode) {
         console.log(`STALL_MODE: withholding webhook for ${settlementId}`);
         return;
       }
@@ -72,6 +74,19 @@ app.post("/charge", (req, res) => {
     });
   });
 });
+
+/** Live control for demos: POST /control { "stall": true|false } */
+app.post("/control", (req, res) => {
+  if (typeof req.body?.stall !== "boolean") {
+    res.status(400).json({ error: "stall must be a boolean" });
+    return;
+  }
+  stallMode = req.body.stall;
+  console.log(`mock-processor: STALL_MODE set to ${stallMode}`);
+  res.json({ ok: true, stallMode });
+});
+
+app.get("/control", (_req, res) => res.json({ stallMode }));
 
 const PORT = 4001;
 app.listen(PORT, () => console.log(`mock-processor listening on :${PORT}`));

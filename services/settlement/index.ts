@@ -1,11 +1,15 @@
 /**
- * Meridian — settlement (Phase 2: real chain leg added).
+ * Meridian — settlement (Phase 3: real chain leg + failure diagnosis).
  *
- * The chain.settle subtree is now real: viem + Celo Sepolia (the Celo
- * Foundation sunset Alfajores and Sepolia is the official successor — see
- * log.md). Goes through rpc-proxy (pass-through in Phase 2; Phase 3 adds
- * latency/timeout injection there) rather than hitting the public RPC
- * directly, so failure injection later has a real seam to work with.
+ * chain.settle is real: viem + Celo Sepolia (Alfajores was sunset — see
+ * log.md), routed through rpc-proxy so RPC-level failure injection (Phase 3's
+ * confirmation_timeout) has a real seam. contract_revert_pre_broadcast comes
+ * from calling settle(0), which genuinely reverts against the deployed
+ * contract's own require(amount > 0) — see contracts/Settlement.sol.
+ * provider_stall is NOT detected here — the webhook that would trigger this
+ * handler never arrives in that case, so payment-api's own watchdog (the
+ * only service positioned to notice an absence) declares it instead. See
+ * services/payment-api/index.ts.
  *
  * Import order matters: startTracing() must run before express/anything else.
  */
@@ -24,7 +28,14 @@ import { celoSepolia } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
 import { trace, metrics, SpanStatusCode } from "@opentelemetry/api";
 import { resumeInWebhook, currentTraceId } from "../../packages/otel/context-bridge";
-import { SPAN, ATTR, classify, Verdict } from "../../packages/otel/conventions";
+import {
+  SPAN,
+  ATTR,
+  classify,
+  Verdict,
+  BLOCK_THRESHOLD,
+  WEBHOOK_THRESHOLD_MS,
+} from "../../packages/otel/conventions";
 import { getSettlement, updateSettlementStatus } from "../../packages/db/settlements";
 
 const tracer = trace.getTracer("meridian-settlement");
@@ -41,8 +52,7 @@ const publicClient = createPublicClient({ chain: celoSepolia, transport: http(RP
 const walletClient = createWalletClient({ account, chain: celoSepolia, transport: http(RPC_URL) });
 
 const CONTRACT = process.env.SETTLEMENT_CONTRACT as `0x${string}`;
-const BLOCK_THRESHOLD = 20;
-const WEBHOOK_THRESHOLD_MS = 8_000;
+const RECEIPT_TIMEOUT_MS = Number(process.env.RECEIPT_TIMEOUT_MS ?? 15_000);
 
 const SETTLE_ABI = [
   { type: "function", name: "settle", stateMutability: "nonpayable", inputs: [{ name: "amount", type: "uint256" }], outputs: [] },
@@ -59,6 +69,13 @@ app.post("/webhook/confirmed", async (req, res) => {
     res.status(404).json({ error: "unknown settlement or missing traceparent" });
     return;
   }
+
+  // Mark "processing" immediately, before any chain work — this is what lets
+  // payment-api's stall watchdog tell "webhook arrived, still working" apart
+  // from "webhook never arrived at all" (see services/payment-api/index.ts;
+  // found via testing that without this, a genuinely-slow-but-real RPC call
+  // produced a false-positive provider_stall verdict).
+  await updateSettlementStatus(settlementId, "processing", providerRef);
 
   await resumeInWebhook({ traceparent: record.traceparent }, SPAN.ON_CONFIRMATION, async (root) => {
     root.setAttributes({
@@ -84,6 +101,7 @@ app.post("/webhook/confirmed", async (req, res) => {
       stalled.add(1, { stage: verdictStage(verdict) });
       valueDelayed.add(amountNgn);
       root.setStatus({ code: SpanStatusCode.ERROR, message: verdict.type });
+      await updateSettlementStatus(settlementId, verdict.type, providerRef);
     } else {
       await timedSpan(SPAN.BALANCE_UPDATE, async () => {
         await updateSettlementStatus(settlementId, "confirmed", providerRef);
@@ -149,7 +167,7 @@ async function settleOnChain(_amountNgn: number, cusd: number): Promise<Verdict>
   let receiptAfterBlocks: number | null = null;
   await timedSpan(SPAN.WAIT_RECEIPT, async (s) => {
     try {
-      const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash!, timeout: 45_000 });
+      const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash!, timeout: RECEIPT_TIMEOUT_MS });
       receiptAfterBlocks = 0;
       s.setAttributes({ [ATTR.TX_STATUS]: receipt.status, [ATTR.TX_CONFIRMATIONS]: 1, [ATTR.VISIBILITY]: "observed" });
     } catch {

@@ -5,7 +5,7 @@ import { useState } from "react";
 const PAYMENT_API_URL =
   process.env.NEXT_PUBLIC_PAYMENT_API_URL ?? "http://localhost:4000";
 
-type PayState = "idle" | "processing" | "received" | "error";
+type PayState = "idle" | "processing" | "received" | "delayed" | "error";
 
 export default function Home() {
   const [state, setState] = useState<PayState>("idle");
@@ -36,6 +36,11 @@ export default function Home() {
         if (data.status === "confirmed") {
           clearInterval(interval);
           setState("received");
+        } else if (data.status !== "pending") {
+          // A terminal non-confirmed status (one of the diagnosis verdicts) —
+          // never surface the internal name here, that's Q&A-only (see AGENTS.md).
+          clearInterval(interval);
+          setState("delayed");
         }
       } catch {
         // transient — keep polling
@@ -76,6 +81,15 @@ export default function Home() {
             <div className="text-4xl">✓</div>
             <p className="text-sm font-medium text-green-600 dark:text-green-400">
               Received
+            </p>
+          </div>
+        )}
+
+        {state === "delayed" && (
+          <div className="flex flex-col items-center gap-2">
+            <div className="text-4xl">⏱</div>
+            <p className="text-sm font-medium text-amber-600 dark:text-amber-400">
+              Taking longer than expected
             </p>
           </div>
         )}
