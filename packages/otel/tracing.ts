@@ -33,8 +33,14 @@ export function startTracing(serviceName: string): void {
       exporter: new OTLPMetricExporter({ url: `${OTLP}/v1/metrics` }),
       exportIntervalMillis: 5_000,
     }),
-    // Auto-instrument HTTP so cross-service context propagates for the SYNC hops
-    // automatically. The ASYNC webhook hop is handled manually in context-bridge.ts.
+    // Auto-instruments HTTP. Verified in Phase 1 that outgoing fetch/undici
+    // calls correctly auto-inject traceparent — do NOT also inject manually,
+    // that produces a header with two comma-joined values which fails strict
+    // W3C parsing on the receiving end. But incoming express/http requests do
+    // NOT get the extracted parent context applied automatically in this
+    // combo, so every server needing that context extracts it explicitly
+    // (see services/mock-processor's /charge handler, and the async webhook
+    // case in context-bridge.ts, which was always explicit by design).
     instrumentations: [getNodeAutoInstrumentations()],
   });
 
