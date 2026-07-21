@@ -34,7 +34,7 @@ The interesting artifact is the **single trace crossing the fiat→chain boundar
 
 ## 3. Scope rules (decided — do not reopen)
 
-1. **Mock everything except the chain leg.** The payment processor, FX, and merchant notification are mock services you own. The **blockchain leg is real** — real viem, real Celo Alfajores testnet, real tx hash, real confirmation wait. The chain leg is the one un-fakeable component; it is the entire differentiator. Everything else is cardboard; that one part is load-bearing steel.
+1. **Mock everything except the chain leg.** The payment processor, FX, and merchant notification are mock services you own. The **blockchain leg is real** — real viem, real Celo Sepolia testnet, real tx hash, real confirmation wait. The chain leg is the one un-fakeable component; it is the entire differentiator. Everything else is cardboard; that one part is load-bearing steel.
 2. **Failures are injected as real conditions, discovered by instrumentation — never hardcoded effects.** You inject the *cause* (a genuinely slow/failing RPC endpoint, a contract call that genuinely reverts, a webhook that genuinely never arrives); the instrumentation *discovers* the effect. Never `sleep(47000)` a fake stall. A judge who spots a hardcoded effect deflates the whole demo. This shapes how every mock is written — decide it in Phase 0.
 3. **One chain only: Celo.** The multi-chain angle is dead. Depth on one beats breadth on five.
 4. **Blockchain internals stay out of the demo narration.** The word "nonce" is never spoken on stage. Diagnosis rigor lives nested in the trace and is *revealed on demand* in Q&A, not narrated.
@@ -60,7 +60,7 @@ Customer taps "Receive Payment"
         ▼
 [settlement]          on webhook: restores context, runs FX + chain settle
         ├── fx.convert        (mock)
-        ├── chain.settle      (REAL — viem → Celo Alfajores)  ◄── THE EXOTIC SUBTREE
+        ├── chain.settle      (REAL — viem → Celo Sepolia)  ◄── THE EXOTIC SUBTREE
         ├── balance.update    (DB)
         └── merchant.notify   (mock → phone flips to ✓)
 ```

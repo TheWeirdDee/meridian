@@ -30,12 +30,12 @@ The trace tells them apart in two seconds. That contrast — three identical sta
 ```
 Customer → payment-api → mock-processor ─(async webhook)→ settlement
                                                             ├── fx.convert
-                                                            ├── chain.settle   (REAL: viem → Celo Alfajores)
+                                                            ├── chain.settle   (REAL: viem → Celo Sepolia)
                                                             ├── balance.update
                                                             └── merchant.notify
    every service → OTLP → SigNoz (traces + funnels + alerts + metrics + logs)
 ```
-The blockchain leg is real (real tx hash on Alfajores). Everything else is a mock we own. Failures are injected as **real conditions** and discovered by the instrumentation — never hardcoded. Full detail in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+The blockchain leg is real (real tx hash on Celo Sepolia). Everything else is a mock we own. Failures are injected as **real conditions** and discovered by the instrumentation — never hardcoded. Full detail in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## Run it
 1. Bring up SigNoz: `git clone https://github.com/SigNoz/signoz && cd signoz/deploy/docker && docker compose up -d` (UI at `:8080`, OTLP at `:4318`).

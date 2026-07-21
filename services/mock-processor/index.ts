@@ -20,6 +20,7 @@
  * STALL_MODE=true accepts the charge but never sends the webhook, injecting
  * the real provider_stall failure (Phase 3), not a hardcoded effect.
  */
+import "dotenv/config";
 import { startTracing } from "../../packages/otel/tracing";
 startTracing("mock-processor");
 

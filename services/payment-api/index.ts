@@ -6,6 +6,7 @@
  * The traceparent captured during payment.provider.charge is what the async
  * webhook (received by `settlement`) later restores — see packages/otel/context-bridge.ts.
  */
+import "dotenv/config";
 import { startTracing } from "../../packages/otel/tracing";
 startTracing("payment-api");
 
