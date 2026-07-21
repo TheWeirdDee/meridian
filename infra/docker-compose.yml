@@ -1,0 +1,76 @@
+# Meridian — infra
+#
+# SigNoz self-host is large and maintained upstream; do NOT hand-copy their compose.
+# `signoz/deploy/docker-compose` is DEPRECATED — SigNoz now installs via Foundry:
+#
+#   curl -fsSL https://signoz.io/foundry.sh | bash -s -- -y
+#   # write casting.yaml next to the signoz clone:
+#   #   apiVersion: v1alpha1
+#   #   kind: Installation
+#   #   metadata: { name: signoz }
+#   #   spec: { deployment: { flavor: compose, mode: docker } }
+#   foundryctl cast -f casting.yaml
+#   # SigNoz UI: http://localhost:8080  |  OTLP/HTTP ingest: http://localhost:4318
+#
+# IMPORTANT first-run step, easy to miss: open the UI and complete the initial
+# account/org signup BEFORE sending any telemetry. Until an org exists, the
+# otel-collector can't get its receiver pipeline provisioned (SigNoz pushes it
+# dynamically over OpAmp) — the OTLP port accepts TCP connections but returns
+# nothing, which looks exactly like a network problem and isn't one.
+#
+# On Windows, SigNoz's docs warn Docker Desktop's virtualization layer can
+# segfault-crash ClickHouse Keeper (exit 139) and recommend native Docker Engine
+# in WSL2 instead. This did not reproduce during Phase 0 on Docker Desktop
+# v29.6.2 — flagging in case it resurfaces under load; see log.md.
+#
+# This file defines ONLY the Meridian app services + a Postgres + the RPC proxy.
+# Point all services at the SigNoz collector via OTEL_EXPORTER_OTLP_ENDPOINT.
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: meridian
+      POSTGRES_DB: meridian
+    ports: ["5432:5432"]
+
+  rpc-proxy:
+    # Thin proxy in front of the real Alfajores RPC. Pass-through by default;
+    # exposes a control endpoint to inject REAL latency/timeout on receipt polls.
+    build: ../services/rpc-proxy
+    environment:
+      UPSTREAM_RPC: ${ALFAJORES_RPC_URL} # e.g. https://alfajores-forno.celo-testnet.org
+      INJECT_MODE: none                  # none | slow | timeout  (set live for demo)
+    ports: ["8899:8899"]
+
+  payment-api:
+    build: ../services/payment-api
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://host.docker.internal:4318
+      PROCESSOR_URL: http://mock-processor:4001
+      DATABASE_URL: postgres://postgres:meridian@postgres:5432/meridian
+    ports: ["4000:4000"]
+    depends_on: [postgres, mock-processor]
+
+  mock-processor:
+    build: ../services/mock-processor
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://host.docker.internal:4318
+      SETTLEMENT_WEBHOOK: http://settlement:4002/webhook/confirmed
+      STALL_MODE: "false"  # set "true" to inject the provider_stall failure (no webhook)
+    ports: ["4001:4001"]
+
+  settlement:
+    build: ../services/settlement
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://host.docker.internal:4318
+      RPC_PROXY_URL: http://rpc-proxy:8899/rpc
+      RPC_PROVIDER_NAME: alfajores-proxy
+      SETTLER_PK: ${SETTLER_PK}
+      SETTLEMENT_CONTRACT: ${SETTLEMENT_CONTRACT}
+      DATABASE_URL: postgres://postgres:meridian@postgres:5432/meridian
+    ports: ["4002:4002"]
+    depends_on: [postgres, rpc-proxy]
+
+# web (Next.js merchant UI) runs on the host with `next dev --webpack` (NOT Turbopack)
+# and talks to payment-api at http://localhost:4000.
