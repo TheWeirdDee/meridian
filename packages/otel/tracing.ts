@@ -11,10 +11,13 @@
 import { NodeSDK } from "@opentelemetry/sdk-node";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-http";
+import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-http";
 import { PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics";
+import { BatchLogRecordProcessor } from "@opentelemetry/sdk-logs";
 import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
 import { resourceFromAttributes } from "@opentelemetry/resources";
 import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
+import { logs } from "@opentelemetry/api-logs";
 
 const OTLP = process.env.OTEL_EXPORTER_OTLP_ENDPOINT ?? "http://localhost:4318";
 
@@ -33,6 +36,12 @@ export function startTracing(serviceName: string): void {
       exporter: new OTLPMetricExporter({ url: `${OTLP}/v1/metrics` }),
       exportIntervalMillis: 5_000,
     }),
+    // Logs emitted inside an active span (via getLogger(serviceName)) are
+    // auto-correlated to the trace/span id by the SDK — that's what makes
+    // "logs correlated to traces at each stage" (BUILD_PHASES Phase 4) work.
+    logRecordProcessors: [
+      new BatchLogRecordProcessor({ exporter: new OTLPLogExporter({ url: `${OTLP}/v1/logs` }) }),
+    ],
     // Auto-instruments HTTP. Verified in Phase 1 that outgoing fetch/undici
     // calls correctly auto-inject traceparent — do NOT also inject manually,
     // that produces a header with two comma-joined values which fails strict
@@ -49,4 +58,9 @@ export function startTracing(serviceName: string): void {
   process.on("SIGTERM", () => {
     sdk?.shutdown().finally(() => process.exit(0));
   });
+}
+
+/** Emits a log correlated to whatever span is active when called. */
+export function getLogger(serviceName: string) {
+  return logs.getLogger(serviceName);
 }

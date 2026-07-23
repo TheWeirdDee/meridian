@@ -27,7 +27,9 @@ import {
 import { celoSepolia } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
 import { trace, metrics, SpanStatusCode } from "@opentelemetry/api";
+import { SeverityNumber } from "@opentelemetry/api-logs";
 import { resumeInWebhook, currentTraceId } from "../../packages/otel/context-bridge";
+import { getLogger } from "../../packages/otel/tracing";
 import {
   SPAN,
   ATTR,
@@ -40,6 +42,7 @@ import { getSettlement, updateSettlementStatus } from "../../packages/db/settlem
 
 const tracer = trace.getTracer("meridian-settlement");
 const meter = metrics.getMeter("meridian-settlement");
+const logger = getLogger("settlement");
 
 const stageDuration = meter.createHistogram("settlement.stage.duration", { unit: "ms" });
 const stalled = meter.createCounter("settlement.stalled");
@@ -85,6 +88,12 @@ app.post("/webhook/confirmed", async (req, res) => {
     });
 
     console.log("resumed trace", currentTraceId(), "for", settlementId);
+    logger.emit({
+      severityNumber: SeverityNumber.INFO,
+      severityText: "INFO",
+      body: `webhook resumed trace for ${settlementId}`,
+      attributes: { [ATTR.SETTLEMENT_ID]: settlementId },
+    });
 
     const amountNgn = Number(record.amountNgn);
 
@@ -95,6 +104,13 @@ app.post("/webhook/confirmed", async (req, res) => {
       return amountCusd;
     });
 
+    logger.emit({
+      severityNumber: SeverityNumber.INFO,
+      severityText: "INFO",
+      body: `starting chain.settle for ${settlementId}: ${amountNgn} NGN -> ${cusd.toFixed(4)} cUSD`,
+      attributes: { [ATTR.SETTLEMENT_ID]: settlementId, [ATTR.AMOUNT_CUSD]: cusd },
+    });
+
     const verdict = await timedSpan(SPAN.CHAIN_SETTLE, async () => settleOnChain(amountNgn, cusd));
 
     if (verdict.type !== "none") {
@@ -102,12 +118,29 @@ app.post("/webhook/confirmed", async (req, res) => {
       valueDelayed.add(amountNgn);
       root.setStatus({ code: SpanStatusCode.ERROR, message: verdict.type });
       await updateSettlementStatus(settlementId, verdict.type, providerRef);
+      logger.emit({
+        severityNumber: SeverityNumber.ERROR,
+        severityText: "ERROR",
+        body: `settlement ${settlementId} diagnosed as ${verdict.type}: ${verdict.evidence}`,
+        attributes: {
+          [ATTR.SETTLEMENT_ID]: settlementId,
+          [ATTR.DIAGNOSIS_TYPE]: verdict.type,
+          [ATTR.DIAGNOSIS_CONFIDENCE]: verdict.confidence,
+          [ATTR.VISIBILITY]: verdict.visibility,
+        },
+      });
     } else {
       await timedSpan(SPAN.BALANCE_UPDATE, async () => {
         await updateSettlementStatus(settlementId, "confirmed", providerRef);
       });
       await timedSpan(SPAN.MERCHANT_NOTIFY, async () => {
         // Mock push. Web UI observes via GET /status polling and flips to "received ✓".
+      });
+      logger.emit({
+        severityNumber: SeverityNumber.INFO,
+        severityText: "INFO",
+        body: `settlement ${settlementId} confirmed`,
+        attributes: { [ATTR.SETTLEMENT_ID]: settlementId },
       });
     }
   });
