@@ -47,6 +47,22 @@ export async function getSettlement(id: string): Promise<SettlementRecord | null
   return rows[0] ?? null;
 }
 
+export interface SettlementListRow extends SettlementRecord {
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Most recent settlements, newest first — powers the dashboard's live table. */
+export async function listSettlements(limit = 50): Promise<SettlementListRow[]> {
+  const { rows } = await pool.query(
+    `SELECT id, merchant_id AS "merchantId", amount_ngn AS "amountNgn", status, traceparent, provider_ref AS "providerRef",
+            created_at AS "createdAt", updated_at AS "updatedAt"
+     FROM settlements ORDER BY created_at DESC LIMIT $1`,
+    [limit],
+  );
+  return rows;
+}
+
 export async function updateSettlementStatus(
   id: string,
   status: string,

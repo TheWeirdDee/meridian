@@ -32,7 +32,7 @@ import {
   BLOCK_THRESHOLD,
   WEBHOOK_THRESHOLD_MS,
 } from "../../packages/otel/conventions";
-import { createSettlement, setTraceparent, getSettlement, updateSettlementStatus } from "../../packages/db/settlements";
+import { createSettlement, setTraceparent, getSettlement, updateSettlementStatus, listSettlements } from "../../packages/db/settlements";
 
 const tracer = trace.getTracer("meridian-payment-api");
 const PROCESSOR_URL = process.env.PROCESSOR_URL ?? "http://localhost:4001";
@@ -147,7 +147,32 @@ app.get("/status/:id", async (req, res) => {
     res.status(404).json({ error: "not found" });
     return;
   }
-  res.json({ settlementId: rec.id, status: rec.status });
+  res.json({
+    settlementId: rec.id,
+    status: rec.status,
+    traceId: rec.traceparent?.split("-")[1] ?? null,
+  });
+});
+
+// Dashboard feed — the whole point of this endpoint is to show, in the app
+// itself, exactly what the SigNoz layer is separately proving: real per-stage
+// outcomes, not a black box. traceId is parsed from the stored W3C traceparent
+// (format: "00-{traceId}-{spanId}-{flags}") so the dashboard can deep-link
+// straight into the matching SigNoz trace.
+app.get("/settlements", async (req, res) => {
+  const limit = Math.min(Number(req.query.limit ?? 50), 200);
+  const rows = await listSettlements(limit);
+  res.json({
+    settlements: rows.map((r) => ({
+      id: r.id,
+      merchantId: r.merchantId,
+      amountNgn: Number(r.amountNgn),
+      status: r.status,
+      traceId: r.traceparent?.split("-")[1] ?? null,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt,
+    })),
+  });
 });
 
 const PORT = 4000;

@@ -183,19 +183,38 @@ async function settleOnChain(_amountNgn: number, cusd: number): Promise<Verdict>
 
   let txHash: `0x${string}` | undefined;
   let sendSucceeded = false;
+  let sendErrorReason: string | null = null;
   await timedSpan(SPAN.SEND_TX, async (s) => {
     const data = encodeFunctionData({ abi: SETTLE_ABI, functionName: "settle", args: [BigInt(Math.floor(cusd * 1e6))] });
-    txHash = await walletClient.sendTransaction({ to: CONTRACT, data, nonce: submittedNonce });
-    sendSucceeded = true;
-    s.setAttributes({
-      [ATTR.TX_HASH]: txHash,
-      [ATTR.RPC_PROVIDER]: RPC_PROVIDER_NAME,
-      [ATTR.CHAIN_ID]: celoSepolia.id,
-      [ATTR.CONTRACT_ADDRESS]: CONTRACT,
-      [ATTR.CONTRACT_FUNCTION]: "settle",
-      [ATTR.VISIBILITY]: "observed",
-    });
+    try {
+      txHash = await walletClient.sendTransaction({ to: CONTRACT, data, nonce: submittedNonce });
+      sendSucceeded = true;
+      s.setAttributes({
+        [ATTR.TX_HASH]: txHash,
+        [ATTR.RPC_PROVIDER]: RPC_PROVIDER_NAME,
+        [ATTR.CHAIN_ID]: celoSepolia.id,
+        [ATTR.CONTRACT_ADDRESS]: CONTRACT,
+        [ATTR.CONTRACT_FUNCTION]: "settle",
+        [ATTR.VISIBILITY]: "observed",
+      });
+    } catch (e: any) {
+      // Concurrent settlements can race on the nonce read above — this is a
+      // real, observed failure (not injected), so it gets its own verdict
+      // (stale_nonce) rather than crashing the webhook handler and leaving
+      // the settlement stuck at "processing" forever.
+      sendErrorReason = e?.shortMessage ?? String(e);
+      s.setStatus({ code: SpanStatusCode.ERROR, message: sendErrorReason ?? "send failed" });
+    }
   });
+
+  if (sendErrorReason) {
+    const pendingAccountNonce = await publicClient.getTransactionCount({ address: account.address });
+    return annotate(classify({
+      sendSucceeded: false, receiptAfterBlocks: null, blockThreshold: BLOCK_THRESHOLD,
+      gasEstimateRevertReason: null, submittedNonce, pendingAccountNonce,
+      providerAccepted: true, webhookAfterMs: 0, webhookThresholdMs: WEBHOOK_THRESHOLD_MS,
+    }));
+  }
 
   let receiptAfterBlocks: number | null = null;
   await timedSpan(SPAN.WAIT_RECEIPT, async (s) => {
