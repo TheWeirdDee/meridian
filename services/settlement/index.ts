@@ -55,7 +55,11 @@ const publicClient = createPublicClient({ chain: celoSepolia, transport: http(RP
 const walletClient = createWalletClient({ account, chain: celoSepolia, transport: http(RPC_URL) });
 
 const CONTRACT = process.env.SETTLEMENT_CONTRACT as `0x${string}`;
-const RECEIPT_TIMEOUT_MS = Number(process.env.RECEIPT_TIMEOUT_MS ?? 15_000);
+// Live-adjustable for the demo's recovery beat (see /control below): a stuck
+// confirmation_timeout needs a window wide enough for a human to flip
+// rpc-proxy back to mode=none and let viem's own retry pick up the now-real
+// receipt — no restart, same "live control" pattern as rpc-proxy's INJECT_MODE.
+let RECEIPT_TIMEOUT_MS = Number(process.env.RECEIPT_TIMEOUT_MS ?? 15_000);
 
 const SETTLE_ABI = [
   { type: "function", name: "settle", stateMutability: "nonpayable", inputs: [{ name: "amount", type: "uint256" }], outputs: [] },
@@ -218,11 +222,11 @@ async function settleOnChain(_amountNgn: number, cusd: number): Promise<Verdict>
 
   let receiptAfterBlocks: number | null = null;
   await timedSpan(SPAN.WAIT_RECEIPT, async (s) => {
-    try {
-      const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash!, timeout: RECEIPT_TIMEOUT_MS });
+    const receipt = await pollForReceipt(txHash!, RECEIPT_TIMEOUT_MS);
+    if (receipt) {
       receiptAfterBlocks = 0;
       s.setAttributes({ [ATTR.TX_STATUS]: receipt.status, [ATTR.TX_CONFIRMATIONS]: 1, [ATTR.VISIBILITY]: "observed" });
-    } catch {
+    } else {
       s.setAttributes({ [ATTR.VISIBILITY]: "inferred" });
     }
   });
@@ -251,6 +255,33 @@ function verdictStage(v: Verdict): string {
     : "wait_for_receipt";
 }
 
+/**
+ * Own, simple polling loop instead of viem's waitForTransactionReceipt.
+ * viem's version ties retries to its internal watchBlockNumber +
+ * replacement-detection machinery, which made the recovery beat unreliable
+ * in practice (a single hung/degraded RPC call didn't reliably keep the
+ * retry loop alive for the configured window). Each attempt races its own
+ * short timeout, so a hung or degraded rpc-proxy response never blocks the
+ * next attempt — this is what makes flipping rpc-proxy back to healthy
+ * mid-poll actually pick up the real receipt on the very next try.
+ */
+async function pollForReceipt(hash: `0x${string}`, timeoutMs: number, intervalMs = 3000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const receipt = await Promise.race([
+        publicClient.getTransactionReceipt({ hash }),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("poll attempt timed out")), 4000)),
+      ]);
+      if (receipt) return receipt;
+    } catch {
+      // not mined yet, or this attempt errored/timed out — keep polling
+    }
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+  return null;
+}
+
 async function timedSpan<T>(name: string, fn: (s: any) => Promise<T>): Promise<T> {
   const start = Date.now();
   return tracer.startActiveSpan(name, async (s) => {
@@ -261,6 +292,20 @@ async function timedSpan<T>(name: string, fn: (s: any) => Promise<T>): Promise<T
     }
   });
 }
+
+/** Live control for the demo's recovery beat: POST /control { "receiptTimeoutMs": 45000 } */
+app.post("/control", (req, res) => {
+  const ms = Number(req.body?.receiptTimeoutMs);
+  if (!Number.isFinite(ms) || ms <= 0) {
+    res.status(400).json({ error: "receiptTimeoutMs must be a positive number" });
+    return;
+  }
+  RECEIPT_TIMEOUT_MS = ms;
+  console.log(`settlement: RECEIPT_TIMEOUT_MS set to ${RECEIPT_TIMEOUT_MS}`);
+  res.json({ ok: true, receiptTimeoutMs: RECEIPT_TIMEOUT_MS });
+});
+
+app.get("/control", (_req, res) => res.json({ receiptTimeoutMs: RECEIPT_TIMEOUT_MS }));
 
 const PORT = 4002;
 app.listen(PORT, () => console.log(`settlement listening on :${PORT}`));

@@ -41,8 +41,17 @@ app.post("/rpc", async (req, res) => {
   const targetsReceipt = isReceiptCall(req.body);
 
   if (targetsReceipt && injectMode === "timeout") {
-    console.log("rpc-proxy: INJECT_MODE=timeout — withholding eth_getTransactionReceipt response");
-    return; // never respond; caller's own timeout is what fires
+    // A real node's honest answer while a tx is still pending is "not found
+    // yet", not a hung connection — returning that (rather than never
+    // responding) keeps the transport healthy so viem's own polling loop
+    // keeps retrying for the full wait_for_receipt window, exactly like a
+    // real "provider genuinely never sees it land" condition. This is also
+    // what makes the recovery beat possible: flip back to mode=none mid-poll
+    // and the very next retry finds the real receipt.
+    console.log("rpc-proxy: INJECT_MODE=timeout — returning 'not found yet' for eth_getTransactionReceipt");
+    const notFound = (id: unknown) => ({ jsonrpc: "2.0", id, result: null });
+    res.json(Array.isArray(req.body) ? req.body.map((b) => notFound(b?.id)) : notFound(req.body?.id));
+    return;
   }
 
   if (targetsReceipt && injectMode === "slow") {
