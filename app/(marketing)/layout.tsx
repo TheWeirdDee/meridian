@@ -13,6 +13,9 @@ function Nav() {
         <Link href="/dashboard" className="hidden transition-colors hover:text-black sm:inline dark:hover:text-white">
           Dashboard
         </Link>
+        <Link href="/docs" className="hidden transition-colors hover:text-black sm:inline dark:hover:text-white">
+          Docs
+        </Link>
         <Link
           href="/pay"
           className="flex items-center gap-1.5 rounded-full bg-black px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
