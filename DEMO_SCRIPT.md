@@ -41,11 +41,11 @@ Practice this once WITHOUT recording first, so the tab-switching feels natural.
 Reset the command back before moving to the next row (shown per row).
 
 ### Row 1 — payment processor breaks
-- Run: `curl -X POST http://localhost:4001/control -d '{"stall":true}'`
+- Run: `curl -X POST http://localhost:4001/control -H "Content-Type: application/json" -d '{"stall":true}'`
 - Tap Pay ₦2,000
 - Say: *"This one breaks the payment processor itself."*
 - Red span to point at: **`payment.provider.charge`**
-- Reset: `curl -X POST http://localhost:4001/control -d '{"stall":false}'`
+- Reset: `curl -X POST http://localhost:4001/control -H "Content-Type: application/json" -d '{"stall":false}'`
 
 ### Row 2 — blockchain call rejects before it's even sent
 - No command needed — just pay **₦0** this one time (not ₦2,000)
@@ -54,11 +54,11 @@ Reset the command back before moving to the next row (shown per row).
 - (nothing to reset)
 
 ### Row 3 — blockchain confirmation stalls
-- Run: `curl -X POST http://localhost:8899/control -d '{"mode":"timeout"}'`
+- Run: `curl -X POST http://localhost:8899/control -H "Content-Type: application/json" -d '{"mode":"timeout"}'`
 - Tap Pay ₦2,000
 - Say: *"This one breaks confirmation on the chain side."*
 - Red span to point at: **`chain.wait_for_receipt`**
-- Reset: `curl -X POST http://localhost:8899/control -d '{"mode":"none"}'`
+- Reset: `curl -X POST http://localhost:8899/control -H "Content-Type: application/json" -d '{"mode":"none"}'`
 
 **After all three, say (about 10 seconds):**
 > "Same spinner, every single time, on her screen. Three completely different causes underneath — and the trace told them apart instantly, every time. No LLM guessing — a deterministic rule reads the real signals and names the cause, with evidence."
@@ -67,7 +67,7 @@ Reset the command back before moving to the next row (shown per row).
 
 ## Close (about 15 seconds)
 
-> "That's Meridian — one payment, one trace, from a fiat rail all the way to real on-chain settlement. Built on SigNoz: traces, a tracing funnel, alerts, a metrics dashboard, and logs, all self-hosted and reproducible. Thanks for watching."
+> "c."
 
 **Stop recording.**
 
