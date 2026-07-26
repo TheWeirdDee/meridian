@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 const PAYMENT_API_URL =
@@ -74,20 +75,6 @@ export default function DashboardPage() {
   const [error, setError] = useState(false);
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
-  const [paying, setPaying] = useState(false);
-
-  async function makePayment() {
-    setPaying(true);
-    try {
-      await fetch(`${PAYMENT_API_URL}/pay`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ amountNgn: 2000 }),
-      });
-    } finally {
-      setPaying(false);
-    }
-  }
 
   useEffect(() => {
     let cancelled = false;
@@ -149,13 +136,12 @@ export default function DashboardPage() {
             <span className="h-2 w-2 animate-pulse rounded-full bg-green-500" />
             live · refreshes every 3s
           </span>
-          <button
-            onClick={makePayment}
-            disabled={paying}
-            className="rounded-full bg-black px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-800 disabled:opacity-50 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
+          <Link
+            href="/pay"
+            className="rounded-full bg-black px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
           >
-            {paying ? "Sending…" : "Make a payment"}
-          </button>
+            Make a payment
+          </Link>
         </div>
       </div>
 

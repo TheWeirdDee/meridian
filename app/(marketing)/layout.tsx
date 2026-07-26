@@ -3,8 +3,13 @@ import Link from "next/link";
 function Nav() {
   return (
     <header className="absolute inset-x-0 top-0 z-20 flex items-center justify-between px-6 py-6 sm:px-10">
-      <Link href="/" className="font-display text-xl tracking-tight italic">
-        Meridian
+      <Link href="/" className="flex items-center gap-2">
+        <span className="flex h-6 w-6 items-center justify-center rounded-md bg-black text-xs font-sans not-italic text-white dark:bg-white dark:text-black">
+          M
+        </span>
+        <span className="font-display text-xl tracking-tight italic">
+          Meridian
+        </span>
       </Link>
       <nav className="flex items-center gap-8 text-sm text-zinc-600 dark:text-zinc-400">
         <Link href="/#flow" className="hidden transition-colors hover:text-black sm:inline dark:hover:text-white">
