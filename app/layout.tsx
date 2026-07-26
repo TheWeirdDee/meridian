@@ -36,8 +36,12 @@ export default function RootLayout({
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} ${fraunces.variable} h-full antialiased`}
+      suppressHydrationWarning
     >
-      <body className="flex min-h-full flex-col bg-white text-black dark:bg-black dark:text-white">
+      <body
+        className="flex min-h-full flex-col bg-white text-black dark:bg-black dark:text-white"
+        suppressHydrationWarning
+      >
         {/* Tailwind's `dark:` variant is class-based (see globals.css), not
             OS-preference based — this restores automatic system dark mode
             without a manual toggle, and runs before paint to avoid a flash. */}
